@@ -2,6 +2,8 @@ from math import floor, cos, radians
 
 from src.geohash import geohash
 from src.trie import CompactTrie
+from math import radians, sin, cos, asin, sqrt
+from src.gera_entregadores import estimar_rota
 
 PRECISAO_INDICE = 5
 
@@ -47,18 +49,11 @@ def buscar_prefixos_vizinhos(centro, raio_km, precision=PRECISAO_INDICE):
             prefixos.add(geohash((lat_centro, lon_centro), precision))
     return prefixos
 
-
-from math import radians, sin, cos, asin, sqrt
-from src.gera_entregadores import estimar_rota
-
-
 def distancia_km(lat1, lon1, lat2, lon2):
     delta_lat = (lat2 - lat1) * 111.32
     delta_lon = (lon2 - lon1) * 111.32 * 0.94
 
     return sqrt(delta_lat**2 + delta_lon**2)
-
-
 
 def buscar_entregadores(
     frota,
