@@ -1,10 +1,9 @@
 
-"""Benchmark de consulta espacial: Trie compacta vs. busca exaustiva.
+"""
+Benchmark de consulta espacial: Trie compacta vs. busca exaustiva.
 
 Execute com:
-    python -m tests.benchmark_busca_espacial \
-        --quantidades 1000 5000 10000 20000 50000 \
-        --repeticoes 10 --raio 2
+python -m tests.benchmark_busca_espacial --quantidades 1000 5000 10000 20000 50000 --repeticoes 10 --raio 2
 """
 
 import argparse
