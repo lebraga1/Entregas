@@ -6,7 +6,7 @@ import osmnx as ox
 from src.geohash import geohash
 
 CAMINHO_GRAFO = (
-    Path(__file__).resolve().parent.parent / "cache" / "bh_malha_viaria.graphml"
+    Path(__file__).resolve().parent.parent / "dados" / "bh_malha_viaria.graphml"
 )
 
 _GRAFO = None
