@@ -72,7 +72,7 @@ Na implementação atual, os entregadores são armazenados com Geohash de precis
 
 Para uma precisão `p`, existem `5 * p` bits. Eles são divididos entre longitude e latitude: `bits_lon = (total_bits + 1) // 2` e `bits_lat = total_bits // 2`. As dimensões angulares aproximadas da célula são `360 / 2**bits_lon` graus de longitude e `180 / 2**bits_lat` graus de latitude.
 
-A busca espacial converte o raio em uma caixa aproximada de latitude e longitude. A margem de longitude considera a latitude por meio do cosseno, pois um grau de longitude representa distâncias diferentes conforme a latitude. A seleção das células inclui uma margem adicional de uma célula nas bordas, para evitar excluir candidatos que estejam próximos aos limites.
+A busca espacial converte o raio em uma caixa aproximada de latitude e longitude. A margem de longitude considera a latitude por meio do cosseno, pois um grau de longitude representa distâncias diferentes conforme a latitude. A caixa recebe uma folga de 1% em cada direção. A seleção inclui todas as células que tocam a caixa, inclusive as vizinhas da célula do restaurante, e a folga cobre pequenas diferenças entre o cálculo da caixa e o de distancia_km. Anteriormente era feito adicionando margens, mas após análises com os testes de benchmarks e comparando os candidatos, foi definido que não é necessário acrescentar uma célula inteira de margem nas bordas.
 
 Células próximas podem ter prefixos diferentes se estiverem em lados opostos de uma fronteira. Por isso, a busca consulta todas as células cobertas pela caixa e depois aplica um filtro geométrico pela distância em linha reta. O Geohash serve para selecionar candidatos; não substitui esse filtro final.
 
@@ -260,7 +260,7 @@ Percorre a frota e insere na Trie o Geohash de cada entregador associado ao seu 
 
 ### 9.2. `buscar_prefixos_vizinhos(centro, raio_km, precision)`
 
-Converte o raio em limites de latitude e longitude, calcula o tamanho das células para a precisão escolhida e enumera as linhas e colunas que cobrem a caixa de busca. A margem adicional nas bordas torna a seleção conservadora: pode recuperar candidatos a mais, mas o filtro final os remove se estiverem fora do raio.
+Converte o raio em limites de latitude e longitude, com uma folga de 1%, calcula o tamanho das células para a precisão escolhida e enumera as linhas e colunas que cobrem a caixa de busca. Toda célula que intersecta a caixa é incluída, então entregadores próximos à fronteira entre células não são perdidos. A seleção continua conservadora: pode trazer candidatos fora do círculo (nos cantos da caixa), que o filtro final remove.
 
 ### 9.3. `buscar_ids_candidatos(indice, prefixos)`
 
@@ -393,35 +393,33 @@ O tempo informado corresponde à mediana das dez medições de cada estratégia.
 
 Os resultados obtidos foram:
 
-| Quantidade de entregadores | Resultados equivalentes | Trie (ms) | Busca exaustiva (ms) | Speedup da Trie |
-|---:|:---:|---:|---:|---:|
-| 1.000 | Sim (88) | 0,493 | 0,247 | 0,50x |
-| 5.000 | Sim (470) | 1,645 | 1,210 | 0,74x |
-| 10.000 | Sim (964) | 3,464 | 2,476 | 0,71x |
-| 20.000 | Sim (1.988) | 7,829 | 5,208 | 0,67x |
-| 50.000 | Sim (5.008) | 23,599 | 13,360 | 0,57x |
+| Entregadores | Equivalentes | Trie (ms) | Exaustiva (ms) | Speedup antes (margem de 1 célula) | Speedup depois (folga de 1%) |
+|---:|:---:|---:|---:|---:|---:|
+| 1.000 | Sim (88) | 0,393 | 0,356 | 0,53x | 0,91x |
+| 5.000 | Sim (470) | 1,811 | 2,299 | 0,97x | 1,27x |
+| 10.000 | Sim (964) | 4,352 | 4,537 | 0,72x | 1,04x |
+| 20.000 | Sim (1.988) | 7,240 | 7,731 | 0,88x | 1,07x |
+| 50.000 | Sim (5.008) | 18,539 | 21,798 | 0,78x | 1,18x |
 
 **Correção dos resultados:** em todos os cinco cenários, a consulta indexada e a busca exaustiva retornaram conjuntos idênticos de entregadores.
 
-A razão apresentada corresponde ao tempo da Trie dividido pelo tempo da busca exaustiva. Portanto, valores superiores a 1 indicam que a Trie foi mais lenta no cenário medido.
+Os tempos são da execução após a otimização
+
+O speedup é a busca exaustiva dividida pela Trie, medido na mesma execução: valores acima de 1 indicam que a Trie foi mais rápida. Os tempos absolutos variaram entre execuções, por isso a comparação antes/depois usa o speedup.
 
 ### 13.3. Interpretação dos resultados
 
-Em todos os tamanhos de frota avaliados, a busca exaustiva apresentou menor tempo de execução. 
+Antes da otimização, a busca exaustiva foi mais rápida em todos os tamanhos de frota. Depois dela, a Trie passou a ser mais rápida a partir de 5.000 entregadores (1,04x a 1,27x) e ficou próxima da exaustiva com 1.000 (0,91x), quando o custo fixo de gerar prefixos e percorrer a Trie pesa mais que a economia no filtro.
 
-Na maior frota, a consulta indexada encontrou 5.008 entregadores dentro do raio de busca. Apesar de reduzir a quantidade de registros submetidos à filtragem final, a Trie precisa gerar os prefixos Geohash, percorrer a estrutura, reunir os identificadores, eliminar duplicatas e recuperar os registros correspondentes antes de calcular as distâncias.
+Com 50.000 entregadores e raio de 2 km, a margem de uma célula consultava 70 células e recuperava 16.834 candidatos (34% da frota). Com a folga de 1%, são 40 células e 10.612 candidatos (21%). Nos dois casos, 5.008 entregadores estão dentro do raio.
 
-A busca exaustiva, por outro lado, percorre sequencialmente a lista de entregadores e calcula a distância de cada registro. Essa operação tem um fluxo de execução simples e pouco overhead adicional, o que pode torná-la mais eficiente para os tamanhos de frota testados.
-
-O speedup da Trie diminuiu de 0,50x, para 1.000 entregadores, para 0,57x, para 50.000. Isso indica que a diferença relativa de desempenho varia conforme o tamanho da entrada, mas a Trie permaneceu mais lenta em todos os cenários avaliados. Os resultados não permitem concluir que essa tendência continuará para frotas maiores.
-
-### 13.3. Recursão e coleta dos resultados
+### 13.4. Recursão e coleta dos resultados
 
 Na implementação atual, a inserção (_insert) e a remoção (_remove) são recursivas. Já a coleta dos valores (_collect) utiliza uma pilha explícita e um laço iterativo, evitando chamadas recursivas durante a travessia dos descendentes.
 
 Como o índice é construído antes da medição e o benchmark não executa remoções, o tempo medido não inclui o custo de _insert nem de _remove. Portanto, a recursão desses métodos não explica diretamente os tempos apresentados.
 
-Durante a consulta, a Trie ainda precisa localizar cada prefixo e percorrer a subárvore correspondente para coletar os valores. O custo dessa coleta depende da quantidade de nós visitados e dos valores encontrados. O benchmark não separa o tempo gasto em cada etapa; assim, não é possível identificar apenas com esses resultados qual delas representa o maior custo.
+Durante a consulta, a Trie ainda precisa localizar cada prefixo e percorrer a subárvore correspondente para coletar os valores. O custo dessa coleta depende da quantidade de nós visitados e dos valores encontrados. A comparação de células e candidatos da seção 13.3 indica que o custo dominante estava na quantidade de candidatos recuperados, e não na forma, recursiva ou iterativa, de percorrer a Trie.
 
 ### 13.5. Relação com o desempenho total da aplicação
 
@@ -431,9 +429,9 @@ A avaliação espacial isolada permite observar o custo da estrutura de dados se
 
 Uma avaliação completa deve considerar o tempo de seleção espacial, a quantidade de candidatos que precisam de roteamento e o custo de estimar suas rotas.
 
-### 13.7. Conclusão do benchmark
+### 13.6. Conclusão do benchmark
 
-Para os dados sintéticos, o centro geográfico, o raio e os tamanhos de frota utilizados, a busca exaustiva foi mais rápida do que a consulta com Trie compacta em todos os cenários. Ambas as estratégias produziram resultados equivalentes, mas a redução da quantidade de distâncias calculadas não compensou o custo adicional da indexação durante as consultas.
+Na versão inicial, a busca exaustiva foi mais rápida em todos os cenários. Após remover a margem de uma célula, a Trie passou a ser mais rápida a partir de 5.000 entregadores (até 1,27x), mantendo resultados idênticos. O ganho veio de reduzir a quantidade de células consultadas e de candidatos recuperados.
 
 Isso não significa que uma Trie compacta seja sempre inadequada para consultas espaciais. O desempenho depende da implementação, da distribuição dos dados, da resolução do Geohash, da quantidade de prefixos consultados e do número de candidatos recuperados.
 
@@ -449,13 +447,13 @@ A implementação possui limitações que devem ser consideradas:
 - A obtenção inicial dos dados geográficos depende da disponibilidade dos serviços externos.
 - Os tempos do benchmark refletem o ambiente de execução e os parâmetros utilizados, não uma garantia de desempenho em qualquer frota ou máquina.
 
-## 16. Conclusão
+## 15. Conclusão
 
-Os benchmarks demonstraram que, nos cenários testados, a Trie compacta recuperou os mesmos resultados da busca exaustiva, mas não apresentou vantagem temporal. A medição mais recente melhorou em relação à original, embora a consulta sequencial ainda tenha sido mais rápida.
+Os benchmarks mostraram que a Trie compacta recupera os mesmos resultados da busca exaustiva e, após ajustar a seleção de células, passa a ser mais rápida a partir de 5.000 entregadores. Na versão inicial, a margem de uma célula fazia a Trie recuperar mais candidatos do que o necessário, e ela era mais lenta em todos os cenários.
 
 Esse resultado destaca a importância de avaliar com testes as estruturas de dados, pois apesar da estrutura reduzir o conjunto de registros examinados, ainda assim pode ser mais lenta devido ao overhead de navegação e recuperação de resultados.
 
-## 17. Referências
+## 16. Referências
 
 - OpenStreetMap. https\://www.openstreetmap.org/
 - OSMnx. Documentação da biblioteca para obtenção, análise e roteamento em redes viárias. https\://osmnx.readthedocs.io/
