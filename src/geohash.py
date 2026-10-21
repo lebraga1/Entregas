@@ -47,3 +47,35 @@ def geohash(coordenadas, precision=8):
         geohash_str += BASE32[decimal]
 
     return geohash_str
+
+
+def geohash_celula(linha, coluna, precision=8):
+    """
+    Codifica índices de uma célula Geohash sem recalcular seus intervalos para aumentar eficiência.
+
+    Essa função é usada para gerar muitas células vizinhas.
+    """
+
+    total_bits = precision * 5
+    bits_lon = (total_bits + 1) // 2
+    bits_lat = total_bits // 2
+
+    valor = 0
+    bits_no_caractere = 0
+    resultado = []
+    for i in range(total_bits):
+        if i % 2 == 0:
+            deslocamento = bits_lon - 1 - i // 2
+            bit = (coluna >> deslocamento) & 1
+        else:
+            deslocamento = bits_lat - 1 - i // 2
+            bit = (linha >> deslocamento) & 1
+
+        valor = (valor << 1) | bit
+        bits_no_caractere += 1
+        if bits_no_caractere == 5:
+            resultado.append(BASE32[valor])
+            valor = 0
+            bits_no_caractere = 0
+
+    return "".join(resultado)

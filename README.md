@@ -1,6 +1,10 @@
 # Indexação Geoespacial e Geometria Computacional Híbrida
 
+
+
 **Alunos:** Leônidas Braga e Yuri Viana
+
+
 
 ## 1. Sobre o projeto
 
@@ -10,11 +14,11 @@ A solução utiliza Geohash para representar coordenadas geográficas em formato
 
 O projeto também utiliza dados de restaurantes obtidos de uma base local e a rede viária do OpenStreetMap. Mecanismos de cache evitam repetir operações de obtenção de dados e geocodificação desnecessariamente.
 
+
 ## 2. Tecnologias utilizadas
 
 | Tecnologia | Finalidade |
 |---|---|
-| Python | Implementação dos algoritmos e da aplicação. |
 | NumPy | Operações numéricas e manipulação das coordenadas dos nós da rede viária. |
 | OSMnx | Obtenção, processamento e análise da rede viária do OpenStreetMap. |
 | Dash | Construção da interface web e gerenciamento das interações. |
@@ -23,141 +27,148 @@ O projeto também utiliza dados de restaurantes obtidos de uma base local e a re
 
 Os dados da rede viária são obtidos do OpenStreetMap por meio do OSMnx. O primeiro carregamento pode exigir acesso à internet. Os dados armazenados em cache podem ser reutilizados em execuções posteriores.
 
+
 ## 3. Estrutura do projeto
 
 ```text
+
 .
 ├── src/
 │   ├── geohash.py
 │   ├── trie.py
 │   ├── busca_espaco.py
-│   ├── distancia.py
 │   ├── gera_entregadores.py
 │   └── interface.py
 ├── tests/
 │   ├── teste_geohash.py
 │   ├── teste_trie.py
-│   ├── test_busca_espaco.py
-│   ├── benchmark.py
 │   └── benchmark_busca.py
 ├── bares.csv
 ├── bares_geocodificados.csv
 ├── app.py
 ├── requirements.txt
 └── README.md
+
 ```
 
 ### Responsabilidade dos módulos
 
-- **`geohash.py`:** implementa a codificação das coordenadas geográficas.
-- **`trie.py`:** implementa a Trie compacta e suas operações.
-- **`busca_espaco.py`:** constrói o índice espacial, identifica candidatos e realiza a filtragem geográfica.
-- **`distancia.py`:** calcula a distância geográfica entre duas posições utilizando a fórmula de Haversine.
-- **`gera_entregadores.py`:** gera a frota sintética, carrega a rede viária e calcula estimativas de rotas.
-- **`interface.py`:** implementa a aplicação web, os controles de consulta, o mapa e a apresentação dos resultados.
-- **`bares.csv`:** contém a base de restaurantes utilizada na aplicação.
-- **`bares_geocodificados.csv`:** armazena os resultados persistidos da geocodificação dos restaurantes.
+- ****`geohash.py`:**** implementa a codificação das coordenadas geográficas.
+- ****`trie.py`:**** implementa a Trie compacta e suas operações.
+- ****`busca_espaco.py`:**** constrói o índice espacial, identifica candidatos e realiza a filtragem geográfica.
+- ****`gera_entregadores.py`:**** gera a frota sintética, carrega a rede viária e calcula estimativas de rotas.
+- ****`interface.py`:**** implementa a aplicação web, os controles de consulta, o mapa e a apresentação dos resultados.
+- ****`bares.csv`:**** contém a base de restaurantes utilizada na aplicação.
+- ****`bares_geocodificados.csv`:**** armazena os resultados persistidos da geocodificação dos restaurantes.
+
 
 ## 4. Representação geográfica com Geohash
 
-A função principal de codificação é:
+A função `geohash(coordenadas, precision=8)` converte uma latitude e longitude em uma cadeia de caracteres. A precisão define o comprimento do código: cada caractere representa 5 bits de informação espacial, alternando subdivisões dos intervalos de longitude e latitude. Quanto maior a precisão, menor é a célula representada.
 
-```python
-geohash(coordenadas, precision=8)
-```
+A busca também utiliza `geohash_celula(linha, coluna, precision)`, que codifica uma célula a partir dos índices de linha e coluna. Isso permite enumerar as células que cobrem uma região de consulta, sem precisar gerar códigos para pontos aleatórios.
 
-A função recebe uma posição geográfica, representada por uma tupla de latitude e longitude, e uma precisão que determina o comprimento do código produzido.
+Na implementação atual, os entregadores são armazenados com Geohash de precisão 8, enquanto `PRECISAO_INDICE = 6` controla os prefixos usados na consulta. Portanto, cada prefixo consultado representa uma célula mais ampla e pode corresponder a vários Geohashes completos armazenados na Trie.
 
-O Geohash divide recursivamente os intervalos de latitude e longitude e representa os intervalos resultantes utilizando caracteres de uma base de 32 símbolos. Quanto maior a precisão, menor tende a ser a região geográfica representada pelo código.
+Para uma precisão `p`, existem `5 * p` bits. Eles são divididos entre longitude e latitude: `bits_lon = (total_bits + 1) // 2` e `bits_lat = total_bits // 2`. As dimensões angulares aproximadas da célula são `360 / 2**bits_lon` graus de longitude e `180 / 2**bits_lat` graus de latitude.
 
-Códigos Geohash com prefixos comuns geralmente representam posições na mesma região. Essa propriedade permite organizar os entregadores e consultar grupos de localizações por prefixo.
+A busca espacial converte o raio em uma caixa aproximada de latitude e longitude. A margem de longitude considera a latitude por meio do cosseno, pois um grau de longitude representa distâncias diferentes conforme a latitude. A seleção das células inclui uma margem adicional de uma célula nas bordas, para evitar excluir candidatos que estejam próximos aos limites.
 
-Entretanto, duas posições próximas podem estar em lados opostos de uma fronteira entre células. Por isso, uma consulta espacial precisa considerar as células vizinhas que possam intersectar a região pesquisada.
+Células próximas podem ter prefixos diferentes se estiverem em lados opostos de uma fronteira. Por isso, a busca consulta todas as células cobertas pela caixa e depois aplica um filtro geométrico pela distância em linha reta. O Geohash serve para selecionar candidatos; não substitui esse filtro final.
+
 
 ## 5. Trie compacta
 
-A Trie compacta é a estrutura de dados utilizada para indexar os códigos Geohash dos entregadores. Seu objetivo é permitir a recuperação dos identificadores associados a chaves que correspondem a um determinado prefixo.
+A Trie compacta indexa os códigos Geohash dos entregadores e permite recuperar valores associados a chaves que começam com determinado prefixo. No projeto, cada chave é um Geohash e os valores são IDs de entregadores.
 
 ### 5.1. Estrutura interna
 
-Em vez de armazenar um caractere por aresta, a Trie compacta pode armazenar sequências de caracteres em um único rótulo. Isso reduz a quantidade de nós necessários em caminhos sem ramificações.
+Cada nó possui três campos:
 
-Na implementação, a classe `CompactTrie` associa valores às chaves. Nesse projeto, os valores correspondem aos identificadores dos entregadores. Uma chave pode estar associada a vários valores caso diferentes registros possuam o mesmo Geohash.
+- `label`: trecho da chave representado pelo nó. A raiz usa uma string vazia; os demais nós armazenam trechos não vazios.
+- `children`: dicionário que associa o primeiro caractere do rótulo de cada filho ao próprio filho.
+- `values`: conjunto dos valores associados à chave que termina exatamente naquele nó.
+
+Como `values` é um conjunto, a mesma associação `(key, value)` não é armazenada duas vezes. Uma chave pode estar associada a vários valores, por exemplo quando mais de um entregador possui o mesmo Geohash. O atributo `size` conta pares únicos `(chave, valor)`, e não apenas a quantidade de chaves distintas.
 
 | Operação | Descrição |
 |---|---|
-| `insert(key, value)` | Insere uma chave e associa um valor a ela. |
-| `search_prefix(prefix)` | Recupera os valores associados às chaves que começam com o prefixo consultado. |
-| `contains(key)` | Verifica a existência de uma chave. |
-| `remove(key, value)` | Remove uma associação entre chave e valor. |
-| `clear()` | Limpa as entradas da estrutura. |
+| `insert(key, value)` | Insere a associação entre chave e valor; retorna `True` somente se o par for novo. |
+| `search_prefix(prefix)` | Recupera os valores associados às chaves que começam com o prefixo. |
+| `search_prefixes(prefixes)` | Consulta vários prefixos e reúne os valores em um conjunto, removendo duplicatas. |
+| `contains(key, value=None)` | Verifica se a chave existe; se `value` for informado como valor diferente de `None`, também verifica a associação. |
+| `remove(key, value)` | Remove somente o par informado, se existir. |
+| `clear()` | Substitui a raiz por uma nova raiz vazia e zera `size`. |
 
-### 5.2. Inserção e divisão de arestas
+**Detalhe da interface:** `search_prefix()` retorna um conjunto quando encontra correspondências e uma lista vazia quando não encontra. Portanto, o tipo de retorno não é uniforme. `search_prefixes()` sempre retorna uma lista, construída a partir da união dos resultados em um conjunto.
 
-Durante a inserção, o algoritmo compara a chave com os rótulos das arestas existentes e determina o maior prefixo comum.
+### 5.2. Inserção e divisão de rótulos
 
-Há três situações principais:
+A inserção compara a chave restante com o rótulo do filho que começa pelo mesmo caractere. Há três situações principais:
 
-1. **Não existe uma aresta compatível:** cria-se uma nova aresta contendo a parte restante da chave.
-2. **A aresta corresponde ao trecho atual da chave:** a inserção prossegue no nó seguinte, processando apenas os caracteres ainda não consumidos.
-3. **A chave e o rótulo divergem no meio da aresta:** a aresta é dividida no ponto de divergência, e os sufixos são organizados em ramificações separadas.
+1. **Não existe filho compatível:** cria um novo nó cujo rótulo contém toda a parte restante da chave.
+2. **O rótulo do filho corresponde por inteiro ao início da chave restante:** continua a inserção no filho, processando apenas os caracteres ainda não consumidos.
+3. **A chave e o rótulo compartilham apenas um prefixo:** cria um nó intermediário com o prefixo comum, encurta o rótulo do filho existente e, se necessário, cria outro filho para o sufixo da nova chave. Se a nova chave terminar exatamente no prefixo comum, o valor é armazenado no nó intermediário.
 
-A implementação utiliza recursão para processar os trechos restantes da chave. Cada chamada trabalha a partir do nó atual e delega a continuação da inserção ao próximo nó quando necessário.
+A compactação mantém sequências de caracteres em um mesmo rótulo, em vez de criar um nó para cada caractere. O método `_insert()` é recursivo e processa os trechos restantes da chave. Uma inserção duplicada não altera o conjunto nem incrementa `size`.
 
 ### 5.3. Busca por prefixo
 
-A operação `search_prefix(prefix)` é central para a aplicação. Ela percorre a Trie até localizar o prefixo solicitado e, em seguida, coleta os valores associados às chaves da subárvore correspondente.
+O método `search_prefix(prefix)` percorre os rótulos compactados até localizar a região que corresponde ao prefixo. Ele considera também o caso em que o prefixo termina no meio do rótulo de um filho: se o rótulo desse filho começa com todo o prefixo restante, todas as chaves abaixo dele são correspondências.
 
-A busca considera três casos:
+Se não houver correspondência, retorna `[]`. Se houver, chama `_collect()` para reunir os valores do nó encontrado e de todos os seus descendentes. A coleta usa uma pilha explícita e um laço iterativo, não chamadas recursivas. Os valores são reunidos em um conjunto, o que elimina duplicatas.
 
-- **Correspondência inexistente:** retorna uma lista vazia.
-- **Prefixo termina em um nó:** coleta os valores do nó e de seus descendentes.
-- **Prefixo termina no interior de um rótulo:** se todos os caracteres do prefixo corresponderem ao início do rótulo, coleta os valores da subárvore abaixo dessa aresta.
+`search_prefixes(prefixes)` repete a consulta para cada prefixo e combina os resultados em um conjunto. Isso é útil na consulta espacial, em que os prefixos Geohash gerados podem recuperar o mesmo ID. A deduplicação evita processar repetidamente um mesmo identificador, mas não elimina o custo de gerar os prefixos, percorrer a estrutura, coletar os valores e recuperar os registros completos.
 
-A localização do prefixo e a coleta dos resultados são operações distintas. A primeira percorre o caminho até a região relevante da árvore; a segunda visita os nós necessários para recuperar os identificadores.
+### 5.4. Verificação, remoção e compactação
 
-### 5.4. Complexidade temporal
+`contains(key, value=None)` percorre os rótulos completos da chave. Quando `value` é omitido ou vale `None`, verifica se o nó terminal possui algum valor; caso contrário, verifica se o valor específico pertence ao conjunto. Por causa desse uso de `None` como sinalizador, o método não permite distinguir uma consulta pela presença explícita do valor `None`.
 
-Considere:
+`remove(key, value)` remove apenas a associação solicitada e decrementa `size` se a remoção ocorrer. O método recursivo `_remove()` então reorganiza o caminho: elimina nós que ficaram sem valores e sem filhos, ou combina o rótulo de um nó sem valores com o rótulo de seu único filho. Essa reorganização mantém a estrutura compacta após remoções.
 
-- \(N\): quantidade de chaves armazenadas;
-- \(L\): comprimento da chave ou do prefixo;
-- \(S\): custo de percorrer a subárvore e coletar os resultados.
+`clear()` cria uma nova raiz e define `size` como zero. Não percorre manualmente todos os nós; os objetos antigos ficam sujeitos à gestão de memória do Python quando deixam de ser referenciados.
+
+### 5.5. Complexidade temporal
+
+Considere `L` o comprimento da chave ou do prefixo, e `S` o custo de visitar a subárvore e reunir os valores correspondentes. Com acesso médio eficiente ao dicionário de filhos, as complexidades aproximadas são:
 
 | Operação | Complexidade temporal aproximada |
 |---|---|
-| Inserção | \(O(L)\), sob hipóteses de acesso eficiente às ramificações e comparação linear dos caracteres. |
-| Busca por chave exata | \(O(L)\), sob as mesmas hipóteses. |
-| Busca por prefixo | \(O(L + S)\), incluindo a coleta dos resultados. |
-| Remoção | \(O(L)\) para localizar a chave, mais o custo de reorganização da árvore. |
-| Limpeza | Depende da implementação; redefinir a raiz pode ser \(O(1)\), enquanto liberar explicitamente todos os nós custa \(O(N)\). |
+| Inserção | `O(L)` para comparar os caracteres e percorrer o caminho; há custo adicional constante para criar ou dividir nós, sem contar o custo de hashing dos valores. |
+| Busca por chave exata (`contains`) | `O(L)` em média. |
+| Busca por prefixo (`search_prefix`) | `O(L + S)`, incluindo a coleta da subárvore correspondente. |
+| Busca de vários prefixos (`search_prefixes`) | Soma dos custos das consultas individuais e da união dos valores coletados. |
+| Remoção | `O(L)` para percorrer a chave e reorganizar o caminho, em média. |
+| Limpeza (`clear`) | `O(1)` para substituir a raiz e zerar o contador; a recuperação da memória dos objetos antigos é gerenciada pelo Python. |
 
-Esses valores descrevem o custo assintótico esperado das operações, não garantem que a Trie seja mais rápida do que uma varredura sequencial em Python. A quantidade de prefixos consultados, os nós visitados, os valores coletados e as estruturas intermediárias também afetam o tempo real.
+Essas estimativas não garantem que a Trie seja mais rápida do que uma varredura sequencial. Na aplicação, também importam a quantidade de prefixos consultados, o número de nós visitados, a quantidade de valores coletados e o custo de recuperar os registros no dicionário `por_id`.
 
-Na busca por prefixo, o custo depende da quantidade de resultados: se milhares de registros correspondem à consulta, é necessário percorrer a região da árvore que contém esses registros.
+### 5.6. Complexidade espacial
 
-### 5.5. Complexidade espacial
+Se houver `K` chaves distintas, comprimento máximo `L` e `P` associações únicas entre chaves e valores, o armazenamento dos rótulos é limitado por `O(KL)` como estimativa geral, e os valores associados ocupam espaço proporcional a `P`. A compactação pode reduzir o número de nós em relação a uma Trie não compactada, sobretudo em caminhos sem ramificações; ela não elimina o armazenamento das chaves e das associações.
 
-Para \(N\) chaves de comprimento máximo \(L\), o tamanho total dos caracteres armazenados é limitado por \(O(NL)\). A Trie compacta pode reduzir a quantidade de nós em relação a uma Trie convencional, especialmente quando há sequências longas sem ramificações.
+O índice espacial também mantém um dicionário `por_id` com os registros completos. Portanto, o consumo total de memória inclui a Trie, as associações chave–ID e o dicionário de registros.
 
-O índice utilizado pela aplicação também mantém um dicionário que associa os identificadores aos registros completos. Portanto, o espaço total depende tanto da estrutura da Trie quanto da quantidade de registros e dos dados armazenados no dicionário.
+### 5.7. Construção do índice espacial
 
-### 5.6. Construção do índice espacial
+A função `construir_indice(entregadores)` insere o Geohash de cada entregador na Trie, associando-o ao ID correspondente. Em paralelo, cria o dicionário `por_id`, que permite recuperar o registro completo a partir do ID.
 
-A função `construir_indice(entregadores)` insere o Geohash de cada entregador na Trie e associa a chave ao identificador do registro. Paralelamente, constrói um dicionário `por_id`, que permite recuperar as informações completas de cada entregador.
+O índice tem, portanto, duas partes:
 
-O índice resultante possui duas partes:
+- **Trie:** recupera IDs a partir de prefixos geográficos.
+- **Dicionário `por_id`:** recupera os registros completos a partir dos IDs.
 
-- **Trie:** recupera identificadores a partir de prefixos geográficos.
-- **Dicionário `por_id`:** recupera os registros completos a partir dos identificadores.
+O índice pode ser construído uma vez e reutilizado em várias consultas. Por isso, o benchmark de consulta apresentado na seção 13 mede separadamente a busca com o índice já construído.
 
-A construção do índice é realizada antes das consultas e o resultado pode ser reutilizado em diversas buscas. Assim, seu custo deve ser medido separadamente do custo de consulta.
+
 
 ## 6. Dados geográficos e mecanismos de cache
 
 A aplicação utiliza duas fontes distintas de dados geográficos: uma base de restaurantes e a rede viária. Como as duas fontes possuem características diferentes, seus mecanismos de cache também são distintos.
 
+
 ### 6.1. Cache persistente dos restaurantes
+
 
 A base `bares.csv` contém os dados dos restaurantes utilizados pela aplicação. Os registros não necessariamente possuem coordenadas geográficas prontas para uso no mapa, de modo que a aplicação precisa geocodificar os endereços.
 
@@ -168,6 +179,7 @@ O problema inicial era que os endereços eram geocodificados novamente a cada ex
 A solução implementada consiste em persistir os resultados em `bares_geocodificados.csv`.
 
 O funcionamento é o seguinte:
+
 
 1. A aplicação lê a base original `bares.csv`.
 2. Verifica os resultados de geocodificação que já estão armazenados em `bares_geocodificados.csv`.
@@ -181,6 +193,7 @@ Esse mecanismo diminui a quantidade de solicitações repetidas, reduz o tempo d
 
 O cache é persistente: diferentemente de uma variável em memória, o arquivo continua disponível após o encerramento do programa. Se os endereços originais forem alterados ou as coordenadas precisarem ser atualizadas, será necessário invalidar ou atualizar os registros correspondentes no cache.
 
+
 ### 6.2. Cache da rede viária
 
 A rede viária é obtida a partir do OpenStreetMap por meio do OSMnx. Seu carregamento e processamento podem ser custosos, pois envolvem a obtenção de dados geográficos e a preparação de um grafo de ruas.
@@ -188,7 +201,9 @@ A rede viária é obtida a partir do OpenStreetMap por meio do OSMnx. Seu carreg
 Para evitar downloads repetidos, a aplicação utiliza a configuração:
 
 ```python
+
 ox.settings.use_cache = True
+
 ```
 
 O OSMnx pode armazenar respostas obtidas durante o acesso aos seus serviços e reutilizá-las em operações posteriores. Além disso, o módulo `gera_entregadores.py` mantém o grafo carregado na variável global `_GRAFO`, acompanhado dos dados auxiliares utilizados para localizar nós próximos.
@@ -197,23 +212,29 @@ O grafo em memória é reutilizado durante a execução do programa, evitando re
 
 O cache não garante que os dados permaneçam permanentemente atualizados. Alterações na rede viária ou nos endereços podem exigir uma atualização explícita.
 
+
 ## 7. Geração da frota sintética
 
-A frota é gerada por meio da função:
+A função `gerar_entregadores(...)`, no módulo `gera_entregadores.py`, cria registros sintéticos de entregadores para a aplicação. A ideia é gerar posições próximas aos restaurantes, em vez de distribuir os pontos uniformemente por toda a cidade.
 
-```python
-gerar_entregadores(restaurantes, quantidade, sigma_km=1.0)
-```
+O processo consiste em:
 
-O algoritmo gera posições de entregadores como uma distribuição normal baseada na proximidades dos restaurantes. O parâmetro `sigma_km` controla a escala da dispersão espacial.
+1. recebe a lista de restaurantes e a quantidade de entregadores desejada;
+2. sorteia posições próximas aos restaurantes, usando uma distribuição normal cuja dispersão é controlada por `sigma_km`;
+3. associa as posições geradas à rede viária, usando o nó mais próximo quando essa etapa está habilitada na implementação;
+4. armazena em cada registro um identificador, latitude, longitude e o Geohash calculado a partir das coordenadas finais.
 
-Como uma posição aleatória pode cair fora de uma via apropriada, o processo utiliza a rede viária para associar os entregadores a nós próximos do grafo. Os registros gerados incluem identificador, latitude, longitude e Geohash.
+O parâmetro `sigma_km` controla a dispersão da distribuição inicial: valores maiores tendem a gerar posições mais distantes do restaurante de referência. A posição final pode mudar ao ser associada à rede viária, pois passa a corresponder a um nó do grafo.
+
+A geração da frota e a construção do índice são etapas distintas. A frota contém os registros; `construir_indice()` indexa os Geohashes desses registros e cria o mapa `por_id` para recuperar os dados completos durante a consulta. Para benchmarks reproduzíveis, deve-se fixar a semente do gerador aleatório, como faz o benchmark apresentado na seção 13.
 
 ## 8. Rede viária e estimativa de rotas
 
+
+
 A função `carregar_grafo()` obtém a rede viária de Belo Horizonte por meio do OSMnx e prepara os atributos necessários para estimar o tempo de viagem.
 
-São atribuídas velocidades de referência a diferentes categorias de vias para calcular o tempo esperado de entraga. Essas velocidades são aproximações e não incorporam condições de trânsito em tempo real.
+São atribuídas velocidades de referência a diferentes categorias de vias para calcular o tempo esperado de entrega. Essas velocidades são aproximações e não incorporam condições de trânsito em tempo real.
 
 ### 8.1. Associação de coordenadas aos nós
 
@@ -231,34 +252,37 @@ A distância pela rede viária não é necessariamente igual à distância em li
 
 ## 9. Algoritmo de busca espacial
 
-A consulta é implementada em `busca_espaco.py`, por meio da função:
+O módulo `busca_espaco.py` separa a construção do índice, a seleção de células candidatas e a filtragem final.
 
-```python
-buscar_entregadores(frota, restaurante, raio_km, indice=None)
-```
+### 9.1. `construir_indice(entregadores, precision=PRECISAO_INDICE)`
 
-A função recebe a frota, o restaurante selecionado, o raio de busca e, opcionalmente, o índice espacial.
+Percorre a frota e insere na Trie o Geohash de cada entregador associado ao seu identificador. Também cria o dicionário `por_id`, que mapeia cada ID ao registro completo, e guarda a precisão usada na consulta. Como a frota normalmente não muda entre consultas, o índice deve ser construído uma vez e reutilizado.
 
-### Etapas da consulta
+### 9.2. `buscar_prefixos_vizinhos(centro, raio_km, precision)`
 
-1. **Preparação:** obtém as coordenadas do restaurante e valida o raio.
-2. **Seleção de regiões candidatas:** quando há índice, calcula os prefixos Geohash das regiões que podem intersectar a área de busca.
-3. **Busca na Trie:** recupera os identificadores associados aos prefixos.
-4. **Recuperação dos registros:** utiliza `por_id` para obter os dados completos dos candidatos.
-5. **Filtragem geométrica:** calcula a distância em linha reta e descarta posições fora do raio.
-6. **Estimativa de rotas:** calcula distância e tempo de viagem na rede viária para os candidatos restantes.
-7. **Ordenação:** organiza os resultados pelo tempo estimado de deslocamento, do menor para o maior.
+Converte o raio em limites de latitude e longitude, calcula o tamanho das células para a precisão escolhida e enumera as linhas e colunas que cobrem a caixa de busca. A margem adicional nas bordas torna a seleção conservadora: pode recuperar candidatos a mais, mas o filtro final os remove se estiverem fora do raio.
 
-Quando o índice não é fornecido, a função pode examinar a frota completa. Essa alternativa permite comparar uma consulta indexada com uma busca exaustiva, desde que ambas utilizem os mesmos critérios de filtragem.
+### 9.3. `buscar_ids_candidatos(indice, prefixos)`
 
+Consulta a Trie pelos prefixos e retorna os IDs encontrados. No benchmark atual, a consulta é feita para cada prefixo com `search_prefix()` e os resultados são unidos em um conjunto, para eliminar duplicatas.
 
-### 9.1 Precisão do índice
+### 9.4. `distancia_km(lat1, lon1, lat2, lon2)`
 
-A implementação utiliza `PRECISAO_INDICE = 5` para selecionar prefixos, enquanto os códigos armazenados podem ter precisão maior. Assim, cada prefixo consultado pode corresponder a vários códigos Geohash mais longos.
+Estima a distância em linha reta usando uma aproximação local: converte diferenças de latitude para quilômetros e ajusta a diferença de longitude pela latitude. É uma aproximação apropriada para filtrar pontos próximos em Belo Horizonte, mas não é a distância percorrida pela rede viária.
 
-A seleção de prefixos deve cobrir todas as células que possam intersectar a região pesquisada. Como as células possuem limites próprios, a filtragem geométrica posterior remove os falsos positivos.
+### 9.5. `buscar_entregadores(frota, restaurante, raio_km, indice=None)`
 
-A correção do índice deve ser verificada comparando os resultados da busca indexada com os da busca exaustiva, sobretudo em diferentes raios e nas proximidades das fronteiras das células.
+A consulta completa segue estas etapas:
+
+1. valida o raio e lê as coordenadas do restaurante;
+2. se existe índice, gera os prefixos vizinhos, consulta a Trie e recupera os registros completos por `por_id`; caso contrário, examina a frota inteira;
+3. calcula a distância em linha reta e descarta entregadores que estejam fora do raio;
+4. para os candidatos restantes, chama `estimar_rota()` para calcular distância e tempo pela rede viária; candidatos sem rota válida são descartados;
+5. ordena os resultados pelo ETA, do menor para o maior.
+
+O filtro do raio é geográfico, enquanto a distância retornada por `estimar_rota()` é viária. Logo, a distância viária pode ser maior do que o raio sem que isso seja uma contradição. O raio determina quais posições são candidatas, e a rota estima o deslocamento pela rede de ruas.
+
+O cálculo de rotas é significativamente mais custoso do que comparar coordenadas. Filtrar primeiro por distância em linha reta reduz o número de chamadas a `estimar_rota()`. Os benchmarks da seção 13 isolam a busca espacial e não incluem roteamento nem ETA, para comparar somente a seleção dos entregadores.
 
 ## 10. Interface web
 
@@ -269,6 +293,7 @@ A interface permite gerar a frota, selecionar um restaurante, definir o raio e e
 Os resultados são ordenados pelo Tempo Estimado, isto é, pelo tempo estimado de chegada.
 
 O tempo exibido pela interface pode incluir tanto a filtragem espacial quanto o cálculo das rotas dos candidatos. Por isso, ele não deve ser confundido com o tempo isolado de consulta espacial apresentado na seção de avaliação experimental.
+
 
 ## 11. Instalação e execução
 
@@ -281,15 +306,21 @@ O tempo exibido pela interface pode incluir tanto a filtragem espacial quanto o 
 No Linux:
 
 ```bash
+
 python3 -m venv .venv
+
 source .venv/bin/activate
+
 python -m pip install --upgrade pip
+
 ```
 
 ### 11.3. Instalar as dependências
 
 ```bash
+
 python -m pip install -r requirements.txt
+
 ```
 
 ### 11.4. Iniciar a aplicação
@@ -297,7 +328,9 @@ python -m pip install -r requirements.txt
 Execute o aplicativo:
 
 ```bash
+
 python -m app.py
+
 ```
 
 Depois da inicialização, abra no navegador o endereço local indicado no terminal.
@@ -311,7 +344,9 @@ Os testes automatizados verificam a correção dos algoritmos independentemente 
 Execute os testes a partir da raiz do projeto:
 
 ```bash
+
 python -m pytest -v
+
 ```
 
 ### 12.1. Testes do Geohash
@@ -320,6 +355,8 @@ python -m pytest -v
 - Verificar se o comprimento corresponde à precisão solicitada.
 - Verificar a consistência para coordenadas iguais.
 - Testar diferentes regiões e posições próximas aos limites das células.
+
+
 
 ### 12.2. Testes da Trie
 
@@ -330,19 +367,9 @@ python -m pytest -v
 - Remover associações e verificar os resultados.
 - Limpar a estrutura.
 
-### 12.3. Testes da busca espacial
-
-- Verificar que posições dentro do raio podem ser encontradas.
-- Verificar que posições fora do raio são descartadas.
-- Comparar a busca indexada com a busca exaustiva.
-- Testar raios inválidos e casos de fronteira.
-- Verificar candidatos sem rota viável.
-
-### 12.4. Testes de integração
-
-A integração entre frota, índice, rede viária e interface pode ser testada com dados pequenos e controlados. Para testar apenas a lógica espacial, as funções dependentes do OSMnx podem ser simuladas, evitando downloads durante os testes.
 
 ## 13. Avaliação experimental
+
 
 Esta seção apresenta o benchmark da consulta espacial, realizado para comparar a Trie compacta com uma busca exaustiva sobre a frota.
 
@@ -352,10 +379,11 @@ O objetivo foi verificar se a indexação por Geohash e Trie reduz o tempo neces
 
 Foram comparadas duas estratégias:
 
-- **Consulta indexada:** gera prefixos Geohash, consulta a Trie, reúne os identificadores candidatos e filtra os registros pela distância em linha reta.
-- **Busca exaustiva:** percorre toda a frota e aplica o mesmo filtro de distância.
 
-A frota sintética foi gerada com uma semente fixa (`seed=3`) e as consultas utilizaram o centro geográfico \((-19.9191, -43.9386)\), com raio de 2 km. Foram avaliados cinco tamanhos de frota, com dez repetições por estratégia.
+- ****Consulta indexada:**** gera prefixos Geohash, consulta a Trie, reúne os identificadores candidatos e filtra os registros pela distância em linha reta.
+- ****Busca exaustiva:**** percorre toda a frota e aplica o mesmo filtro de distância.
+
+A frota sintética foi gerada com uma semente fixa (`seed=3`) e as consultas utilizaram o centro geográfico \\((-19.9191, -43.9386)\\), com raio de 2 km. Foram avaliados cinco tamanhos de frota, com dez repetições por estratégia.
 
 O índice foi construído antes da medição e reutilizado nas consultas. O tempo de construção da Trie, o cálculo de rotas e a estimativa de ETA não foram incluídos.
 
@@ -365,13 +393,13 @@ O tempo informado corresponde à mediana das dez medições de cada estratégia.
 
 Os resultados obtidos foram:
 
-| Quantidade de entregadores | Resultados após filtragem espacial | Trie (ms) | Busca exaustiva (ms) | Razão Trie / exaustiva |
-|---:|---:|---:|---:|---:|
-| 1.000 | 117 | 0,789 | 0,381 | 2,07x |
-| 5.000 | 529 | 3,509 | 1,946 | 1,80x |
-| 10.000 | 1.003 | 8,352 | 3,787 | 2,21x |
-| 20.000 | 2.018 | 19,795 | 7,555 | 2,62x |
-| 50.000 | 5.133 | 60,322 | 19,808 | 3,05x |
+| Quantidade de entregadores | Resultados equivalentes | Trie (ms) | Busca exaustiva (ms) | Speedup da Trie |
+|---:|:---:|---:|---:|---:|
+| 1.000 | Sim (88) | 0,493 | 0,247 | 0,50x |
+| 5.000 | Sim (470) | 1,645 | 1,210 | 0,74x |
+| 10.000 | Sim (964) | 3,464 | 2,476 | 0,71x |
+| 20.000 | Sim (1.988) | 7,829 | 5,208 | 0,67x |
+| 50.000 | Sim (5.008) | 23,599 | 13,360 | 0,57x |
 
 **Correção dos resultados:** em todos os cinco cenários, a consulta indexada e a busca exaustiva retornaram conjuntos idênticos de entregadores.
 
@@ -379,35 +407,35 @@ A razão apresentada corresponde ao tempo da Trie dividido pelo tempo da busca e
 
 ### 13.3. Interpretação dos resultados
 
-A busca exaustiva foi mais rápida em todos os tamanhos de frota testados. Para 50 mil entregadores, por exemplo, a Trie levou aproximadamente 60,3 ms, enquanto a busca exaustiva levou 19,8 ms.
+Em todos os tamanhos de frota avaliados, a busca exaustiva apresentou menor tempo de execução. 
 
-Embora a Trie tenha reduzido o número de registros submetidos à filtragem final, o custo de consultar a estrutura foi superior à economia obtida. Na maior frota, 5.133 entregadores ficaram dentro do raio de busca, mas a Trie precisou gerar os prefixos, percorrer os nós correspondentes, reunir os identificadores e recuperar os registros antes de calcular as distâncias.
+Na maior frota, a consulta indexada encontrou 5.008 entregadores dentro do raio de busca. Apesar de reduzir a quantidade de registros submetidos à filtragem final, a Trie precisa gerar os prefixos Geohash, percorrer a estrutura, reunir os identificadores, eliminar duplicatas e recuperar os registros correspondentes antes de calcular as distâncias.
 
-A busca exaustiva, por outro lado, percorreu uma lista e calculou a distância de cada entregador. Essa operação sequencial é simples e possui pouco overhead de estruturas de dados.
+A busca exaustiva, por outro lado, percorre sequencialmente a lista de entregadores e calcula a distância de cada registro. Essa operação tem um fluxo de execução simples e pouco overhead adicional, o que pode torná-la mais eficiente para os tamanhos de frota testados.
 
-Os resultados também mostram que a diferença aumenta nas frotas maiores: a Trie demorou aproximadamente 2,07 vezes o tempo da busca exaustiva para 1.000 entregadores e 3,05 vezes para 50.000. Isso indica que, para essa implementação, a consulta à Trie não compensou o custo de seleção dos candidatos.
+O speedup da Trie diminuiu de 0,50x, para 1.000 entregadores, para 0,57x, para 50.000. Isso indica que a diferença relativa de desempenho varia conforme o tamanho da entrada, mas a Trie permaneceu mais lenta em todos os cenários avaliados. Os resultados não permitem concluir que essa tendência continuará para frotas maiores.
 
-### 13.4. O papel da recursão
+### 13.3. Recursão e coleta dos resultados
 
-A implementação recursiva da Trie pode contribuir para o custo, pois cada chamada tem overhead adicional em Python. Além disso, a coleta dos resultados percorre os descendentes da subárvore correspondente.
+Na implementação atual, a inserção (_insert) e a remoção (_remove) são recursivas. Já a coleta dos valores (_collect) utiliza uma pilha explícita e um laço iterativo, evitando chamadas recursivas durante a travessia dos descendentes.
 
-Entretanto, o benchmark não mede separadamente o custo da recursão. Portanto, não é possível concluir que ela seja a causa principal da diferença.
+Como o índice é construído antes da medição e o benchmark não executa remoções, o tempo medido não inclui o custo de _insert nem de _remove. Portanto, a recursão desses métodos não explica diretamente os tempos apresentados.
+
+Durante a consulta, a Trie ainda precisa localizar cada prefixo e percorrer a subárvore correspondente para coletar os valores. O custo dessa coleta depende da quantidade de nós visitados e dos valores encontrados. O benchmark não separa o tempo gasto em cada etapa; assim, não é possível identificar apenas com esses resultados qual delas representa o maior custo.
 
 ### 13.5. Relação com o desempenho total da aplicação
 
-Este experimento não inclui o cálculo de rotas. Isso é importante porque o cálculo de ETA pela rede viária pode dominar o tempo total de uma consulta completa.
+Este experimento não inclui o cálculo de rotas. Isso é importante porque o cálculo de tempo de chegada pela rede viária pode dominar o tempo total de uma consulta completa.
 
 A avaliação espacial isolada permite observar o custo da estrutura de dados sem que as operações de roteamento ocultem as diferenças. Entretanto, os resultados aqui apresentados não permitem concluir diretamente qual estratégia oferece o menor tempo de resposta para a aplicação inteira.
 
 Uma avaliação completa deve considerar o tempo de seleção espacial, a quantidade de candidatos que precisam de roteamento e o custo de estimar suas rotas.
 
-### 13.6. Conclusão do benchmark
+### 13.7. Conclusão do benchmark
 
-Para os dados sintéticos, o centro geográfico e o raio utilizados, a busca exaustiva foi mais eficiente do que a consulta pela Trie compacta. As duas estratégias produziram os mesmos resultados, mas a indexação adicionou um custo de processamento que não foi compensado pela redução do número de distâncias calculadas.
+Para os dados sintéticos, o centro geográfico, o raio e os tamanhos de frota utilizados, a busca exaustiva foi mais rápida do que a consulta com Trie compacta em todos os cenários. Ambas as estratégias produziram resultados equivalentes, mas a redução da quantidade de distâncias calculadas não compensou o custo adicional da indexação durante as consultas.
 
-Isso não significa que uma Trie compacta seja sempre inadequada para consultas espaciais. O resultado depende da implementação, da distribuição dos dados, da resolução do Geohash, da quantidade de prefixos e do número de candidatos recuperados.
-
-Como melhoria futura, seria ideal avaliar as etapas internas da consulta para identificar os custos dominantes e avaliar otimizações antes de alterar a estrutura de dados.
+Isso não significa que uma Trie compacta seja sempre inadequada para consultas espaciais. O desempenho depende da implementação, da distribuição dos dados, da resolução do Geohash, da quantidade de prefixos consultados e do número de candidatos recuperados.
 
 ## 14. Limitações
 
@@ -421,18 +449,17 @@ A implementação possui limitações que devem ser consideradas:
 - A obtenção inicial dos dados geográficos depende da disponibilidade dos serviços externos.
 - Os tempos do benchmark refletem o ambiente de execução e os parâmetros utilizados, não uma garantia de desempenho em qualquer frota ou máquina.
 
-
 ## 16. Conclusão
 
-O benchmark da consulta espacial demonstrou que, na implementação e nos cenários testados, a Trie compacta não apresentou vantagem temporal sobre a busca exaustiva. Apesar de recuperar corretamente os mesmos resultados, seu custo de consulta foi maior em todos os tamanhos de frota avaliados.
+Os benchmarks demonstraram que, nos cenários testados, a Trie compacta recuperou os mesmos resultados da busca exaustiva, mas não apresentou vantagem temporal. A medição mais recente melhorou em relação à original, embora a consulta sequencial ainda tenha sido mais rápida.
 
-Esse resultado destaca a importância de avaliar com testes as estruturas de dados,pois apesar da estrutura reduzir o conjunto de registros examinados, ainda assim pode ser mais lenta devido ao overhead de navegação e recuperação de resultados.
+Esse resultado destaca a importância de avaliar com testes as estruturas de dados, pois apesar da estrutura reduzir o conjunto de registros examinados, ainda assim pode ser mais lenta devido ao overhead de navegação e recuperação de resultados.
 
 ## 17. Referências
 
-- OpenStreetMap. https://www.openstreetmap.org/
-- OSMnx. Documentação da biblioteca para obtenção, análise e roteamento em redes viárias. https://osmnx.readthedocs.io/
-- Nominatim. Documentação do serviço de geocodificação do OpenStreetMap. https://nominatim.org/
-- Dash. https://dash.plotly.com/
-- Dash Leaflet. https://www.dash-leaflet.com/
-- pytest. https://docs.pytest.org/
+- OpenStreetMap. https\://www.openstreetmap.org/
+- OSMnx. Documentação da biblioteca para obtenção, análise e roteamento em redes viárias. https\://osmnx.readthedocs.io/
+- Nominatim. Documentação do serviço de geocodificação do OpenStreetMap. https\://nominatim.org/
+- Dash. https\://dash.plotly.com/
+- Dash Leaflet. https\://www.dash-leaflet.com/
+- pytest. https\://docs.pytest.org/
