@@ -7,7 +7,7 @@ def test_prefix_search_and_split_labels():
     trie.insert("abcxyz", "b")
     trie.insert("abc", "c")
     assert set(trie.search_prefix("abc")) == {"a", "b", "c"}
-    assert trie.search_prefix("abcdef") == ["a"]
+    assert trie.search_prefix("abcdef") == {"a"}
     assert trie.search_prefix("abq") == []
 
 

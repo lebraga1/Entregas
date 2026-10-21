@@ -71,9 +71,7 @@ def valor_coluna(linha, *nomes):
 
 
 def construir_endereco(bar):
-    tipo = normalizar_tipo_logradouro(
-        valor_coluna(bar, "DESC_LOGRADOURO")
-    )
+    tipo = normalizar_tipo_logradouro(valor_coluna(bar, "DESC_LOGRADOURO"))
     logradouro = valor_coluna(bar, "NOME_LOGRADOURO")
     numero = valor_coluna(bar, "NUMERO_IMOVEL")
     bairro = valor_coluna(bar, "NOME_BAIRRO")
@@ -92,9 +90,7 @@ def construir_endereco(bar):
 
 def criar_restaurante(bar, lat, lon):
     nome = valor_coluna(bar, "NOME_FANTASIA", "NOME")
-    tipo = normalizar_tipo_logradouro(
-        valor_coluna(bar, "DESC_LOGRADOURO")
-    )
+    tipo = normalizar_tipo_logradouro(valor_coluna(bar, "DESC_LOGRADOURO"))
     logradouro = valor_coluna(bar, "NOME_LOGRADOURO")
     numero = valor_coluna(bar, "NUMERO_IMOVEL")
     bairro = valor_coluna(bar, "NOME_BAIRRO")
@@ -116,10 +112,7 @@ def criar_restaurante(bar, lat, lon):
 
 def salvar_cache(geracao=None):
     with _LOCK:
-        if (
-            geracao is not None
-            and geracao != _GERACAO_CARREGAMENTO
-        ):
+        if (geracao is not None and geracao != _GERACAO_CARREGAMENTO):
             return
 
         linhas = [
@@ -131,10 +124,7 @@ def salvar_cache(geracao=None):
             for identificador, coordenadas in _COORDENADAS.items()
         ]
 
-        cache = pd.DataFrame(
-            linhas,
-            columns=["_id", "lat", "lon"],
-        )
+        cache = pd.DataFrame(linhas, columns=["_id", "lat", "lon"])
 
         temporario = CAMINHO_CACHE.with_suffix(".tmp")
         cache.to_csv(temporario, index=False)
@@ -145,10 +135,7 @@ def ler_coordenadas_cache():
     if not CAMINHO_CACHE.exists():
         return {}
 
-    cache = pd.read_csv(
-        CAMINHO_CACHE,
-        dtype={"_id": str},
-    )
+    cache = pd.read_csv(CAMINHO_CACHE, dtype={"_id": str})
 
     if not {"_id", "lat", "lon"}.issubset(cache.columns):
         return {}
@@ -164,12 +151,7 @@ def ler_coordenadas_cache():
             lat = float(linha["lat"])
             lon = float(linha["lon"])
 
-            if (
-                math.isfinite(lat)
-                and math.isfinite(lon)
-                and -90 <= lat <= 90
-                and -180 <= lon <= 180
-            ):
+            if (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180):
                 coordenadas[identificador] = (lat, lon)
 
         except (TypeError, ValueError):
@@ -198,20 +180,11 @@ def geocodificar_pendentes(barras, geracao):
                     if localizacao:
                         lat, lon = map(float, localizacao)
 
-                        if not (
-                            math.isfinite(lat)
-                            and math.isfinite(lon)
-                            and -90 <= lat <= 90
-                            and -180 <= lon <= 180
-                        ):
-                            raise ValueError(
-                                "Coordenadas inválidas retornadas pelo geocodificador."
-                            )
+                        if not (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180):
+                            raise ValueError("Coordenadas inválidas retornadas pelo geocodificador.")
 
                         _COORDENADAS[identificador] = (lat, lon)
-                        _RESTAURANTES.append(
-                            criar_restaurante(bar, lat, lon)
-                        )
+                        _RESTAURANTES.append(criar_restaurante(bar, lat, lon))
                     else:
                         _FALHAS += 1
 
@@ -362,6 +335,7 @@ def estado_carregamento():
 
 def camada_base():
     """Mapa inicial sem marcadores de restaurantes ou entregadores."""
+    
     return [
         dl.TileLayer(
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -461,6 +435,8 @@ def tabela_resultados(resultados):
         ],
         className="w-full text-left text-sm text-gray-500",
     )
+    
+# INTERFACE
 
 app = dash.Dash(
     __name__,
@@ -693,6 +669,8 @@ app.layout = html.Div(
     ],
 )
 
+# FUNCOES INTERFACE
+
 @app.callback(
     Output("restaurant-select", "options"),
     Output("restaurant-select", "placeholder"),
@@ -785,10 +763,7 @@ def atualizar_restaurantes(_, modo):
     State("restaurant-store", "data"),
 )
 def atualizar_restaurante_selecionado(restaurante_id, restaurantes):
-    return marcador_restaurante_selecionado(
-        restaurantes or [],
-        restaurante_id,
-    )
+    return marcador_restaurante_selecionado(restaurantes or [], restaurante_id)
 
 
 @app.callback(
@@ -827,7 +802,7 @@ def gerar_frota(n_clicks, quantidade, restaurantes):
 
         quantidade = int(valor)
 
-        print("=== GERAÇÃO DA FROTA ===")
+        print("\nGERANDO ENTRAGADORES!")
         print("Restaurantes disponíveis:", len(restaurantes))
         print("Quantidade solicitada:", quantidade)
 
@@ -915,13 +890,7 @@ def gerar_frota(n_clicks, quantidade, restaurantes):
     State("courier-store", "data"),
     prevent_initial_call=True,
 )
-def consultar_frota(
-    n_clicks,
-    restaurante_id,
-    raio_km,
-    restaurantes,
-    frota,
-):
+def consultar_frota(n_clicks, restaurante_id, raio_km, restaurantes, frota):
     if not restaurante_id:
         return (
             dash.no_update,
