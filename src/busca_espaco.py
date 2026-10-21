@@ -130,7 +130,8 @@ def buscar_entregadores(frota, restaurante, raio_km, indice=None):
         if distancia_km(lat_rest, lon_rest, lat, lon) > raio_km:
             continue
 
-        rota = estimar_rota(lat_rest, lon_rest, lat, lon)
+        # Do entregador até o restaurante: o grafo é dirigido (ruas de mão única).
+        rota = estimar_rota(lat, lon, lat_rest, lon_rest)
 
         # Ignora pontos para os quais não foi possível estimar uma rota
         if rota is None:

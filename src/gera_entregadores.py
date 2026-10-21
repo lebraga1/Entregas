@@ -1,7 +1,14 @@
+from pathlib import Path
+from itertools import pairwise
+
 import numpy as np
 import osmnx as ox
 
 from src.geohash import geohash
+
+CAMINHO_GRAFO = (
+    Path(__file__).resolve().parent.parent / "dados" / "bh_malha_viaria.graphml"
+)
 
 _GRAFO = None
 _IDS_NOS = None
@@ -9,29 +16,36 @@ _XS = None
 _YS = None
 
 def carregar_grafo():
-    """Carrega a rede viária de Belo Horizonte do OpenStreetMap e calcula tempos de viagem."""
+    """Carrega a rede viária de BH do arquivo em dados/ ou, na primeira vez, do OpenStreetMap, e calcula tempos de viagem."""
     global _GRAFO, _IDS_NOS, _XS, _YS
 
     if _GRAFO is None:
-        ox.settings.use_cache = True
+        if CAMINHO_GRAFO.exists():
+            grafo = ox.load_graphml(CAMINHO_GRAFO)
+        else:
+            ox.settings.use_cache = True
 
-        grafo = ox.graph_from_place("Belo Horizonte, Minas Gerais, Brazil", network_type="drive",)
+            grafo = ox.graph_from_place("Belo Horizonte, Minas Gerais, Brazil", network_type="drive",)
 
-        # Velocidades estimadas para calcular tempo de chegada.
-        velocidades = {
-            "motorway": 80,
-            "trunk": 60,
-            "primary": 40,
-            "secondary": 30,
-            "tertiary": 30,
-            "residential": 30,
-            "unclassified": 30,
-            "service": 30,
-            "living_street": 30,
-        }
+            # Velocidades estimadas para calcular tempo de chegada.
+            velocidades = {
+                "motorway": 80,
+                "trunk": 60,
+                "primary": 40,
+                "secondary": 30,
+                "tertiary": 30,
+                "residential": 30,
+                "unclassified": 30,
+                "service": 30,
+                "living_street": 30,
+            }
 
-        grafo = ox.routing.add_edge_speeds(grafo,hwy_speeds=velocidades,fallback=20)
-        grafo = ox.routing.add_edge_travel_times(grafo)
+            grafo = ox.routing.add_edge_speeds(grafo,hwy_speeds=velocidades,fallback=20)
+            grafo = ox.routing.add_edge_travel_times(grafo)
+
+            # Salva a malha já com os tempos de viagem para não depender do Overpass de novo.
+            CAMINHO_GRAFO.parent.mkdir(exist_ok=True)
+            ox.save_graphml(grafo, CAMINHO_GRAFO)
 
         nos = list(grafo.nodes(data=True))
 
@@ -66,11 +80,16 @@ def estimar_rota(lat_origem, lon_origem, lat_destino, lon_destino):
     if rota is None:
         return None
 
-    arestas = ox.routing.route_to_gdf(grafo, rota)
+    distancia = 0.0
+    tempo = 0.0
+    for u, v in pairwise(rota):
+        aresta = min(grafo[u][v].values(), key=lambda d: d["travel_time"])
+        distancia += aresta["length"]
+        tempo += aresta["travel_time"]
 
     return {
-        "distance": float(arestas["length"].sum()) / 1000,
-        "eta_minutes": float(arestas["travel_time"].sum()) / 60,
+        "distance": distancia / 1000,
+        "eta_minutes": tempo / 60,
     }
 
 
