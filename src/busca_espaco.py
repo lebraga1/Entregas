@@ -33,13 +33,13 @@ def buscar_prefixos_vizinhos(centro, raio_km, precision=PRECISAO_INDICE):
     total_bits = precision * 5
     bits_lon = (total_bits + 1) // 2
     bits_lat = total_bits // 2
-    altura = 180.0 / (2 ** bits_lat)
-    largura = 360.0 / (2 ** bits_lon)
+    altura = 180.0 / (2**bits_lat)
+    largura = 360.0 / (2**bits_lon)
 
     linha_min = max(0, floor((lat_min + 90.0) / altura) - 1)
-    linha_max = min(2 ** bits_lat - 1, floor((lat_max + 90.0) / altura) + 1)
+    linha_max = min(2**bits_lat - 1, floor((lat_max + 90.0) / altura) + 1)
     coluna_min = max(0, floor((lon_min + 180.0) / largura) - 1)
-    coluna_max = min(2 ** bits_lon - 1, floor((lon_max + 180.0) / largura) + 1)
+    coluna_max = min(2**bits_lon - 1, floor((lon_max + 180.0) / largura) + 1)
 
     prefixos = set()
     for linha in range(linha_min, linha_max + 1):
@@ -49,11 +49,13 @@ def buscar_prefixos_vizinhos(centro, raio_km, precision=PRECISAO_INDICE):
             prefixos.add(geohash((lat_centro, lon_centro), precision))
     return prefixos
 
+
 def distancia_km(lat1, lon1, lat2, lon2):
     delta_lat = (lat2 - lat1) * 111.32
     delta_lon = (lon2 - lon1) * 111.32 * 0.94
 
     return sqrt(delta_lat**2 + delta_lon**2)
+
 
 def buscar_entregadores(
     frota,
@@ -80,9 +82,7 @@ def buscar_entregadores(
         ids_candidatos = set()
 
         for prefixo in prefixos:
-            ids_candidatos.update(
-                indice["trie"].search_prefix(prefixo)
-            )
+            ids_candidatos.update(indice["trie"].search_prefix(prefixo))
 
         candidatos = [
             indice["por_id"][identificador]
@@ -111,11 +111,12 @@ def buscar_entregadores(
             continue
 
         # Calcula a rota viária apenas para os resultados relevantes.
+        # rota do entregador até o restaurante
         rota = estimar_rota(
-            lat_rest,
-            lon_rest,
             lat,
             lon,
+            lat_rest,
+            lon_rest,
         )
 
         if rota is None:
