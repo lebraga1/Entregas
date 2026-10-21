@@ -1,4 +1,5 @@
 from pathlib import Path
+from itertools import pairwise
 
 import numpy as np
 import osmnx as ox
@@ -98,11 +99,16 @@ def estimar_rota(lat_origem, lon_origem, lat_destino, lon_destino):
     if rota is None:
         return None
 
-    arestas = ox.routing.route_to_gdf(grafo, rota)
+    distancia = 0.0
+    tempo = 0.0
+    for u, v in pairwise(rota):
+        aresta = min(grafo[u][v].values(), key=lambda d: d["travel_time"])
+        distancia += aresta["length"]
+        tempo += aresta["travel_time"]
 
     return {
-        "distance": float(arestas["length"].sum()) / 1000,
-        "eta_minutes": float(arestas["travel_time"].sum()) / 60,
+        "distance": distancia / 1000,
+        "eta_minutes": tempo / 60,
     }
 
 
