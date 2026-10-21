@@ -7,9 +7,10 @@ from src.trie import CompactTrie
 PRECISAO_INDICE = 6
 PRECISAO_MAXIMA = 8
 
+
 def construir_indice(entregadores, precision=PRECISAO_INDICE):
     """Cria uma Trie para localizar entregadores por Geohash."""
-    
+
     if not isinstance(precision, int) or isinstance(precision, bool):
         raise ValueError("A precisão deve ser um inteiro.")
     if not 1 <= precision <= PRECISAO_MAXIMA:
@@ -23,15 +24,12 @@ def construir_indice(entregadores, precision=PRECISAO_INDICE):
         por_id[entregador["id"]] = entregador
 
     # A Trie localiza os IDs e o dicionário recupera os dados completos
-    return {
-        "trie": trie,
-        "por_id": por_id,
-        "precision": precision
-    }
+    return {"trie": trie, "por_id": por_id, "precision": precision}
+
 
 def buscar_prefixos_vizinhos(centro, raio_km, precision=PRECISAO_INDICE):
     """Encontra células Geohash que podem conter pontos dentro do raio."""
-    
+
     if raio_km < 0:
         raise ValueError("O raio deve ser não negativo.")
     if not isinstance(precision, int) or isinstance(precision, bool):
@@ -42,8 +40,8 @@ def buscar_prefixos_vizinhos(centro, raio_km, precision=PRECISAO_INDICE):
     lat, lon = centro
 
     # Converte o raio de quilômetros em margens aproximadas de latitude e longitude.
-    margem_lat = raio_km / 110.574
-    margem_lon = raio_km / (111.320 * max(abs(cos(radians(lat))), 0.01))
+    margem_lat = 1.01 * raio_km / 110.574
+    margem_lon = 1.01 * raio_km / (111.320 * max(abs(cos(radians(lat))), 0.01))
 
     lat_min = max(-90, lat - margem_lat)
     lat_max = min(90, lat + margem_lat)
@@ -56,14 +54,14 @@ def buscar_prefixos_vizinhos(centro, raio_km, precision=PRECISAO_INDICE):
     bits_lat = total_bits // 2
 
     # Divide o globo em linhas e colunas de células Geohash.
-    altura = 180 / (2 ** bits_lat)
-    largura = 360 / (2 ** bits_lon)
+    altura = 180 / (2**bits_lat)
+    largura = 360 / (2**bits_lon)
 
-    # Acrescenta uma célula de margem para evitar perder candidatos nas bordas.
-    linha_min = max(0, floor((lat_min + 90) / altura) - 1)
-    linha_max = min(2 ** bits_lat - 1, floor((lat_max + 90) / altura) + 1)
-    coluna_min = max(0, floor((lon_min + 180) / largura) - 1)
-    coluna_max = min(2 ** bits_lon - 1, floor((lon_max + 180) / largura) + 1)
+    # A folga de 1% na caixa já cobre as bordas; não precisa de uma célula extra.
+    linha_min = max(0, floor((lat_min + 90) / altura))
+    linha_max = min(2**bits_lat - 1, floor((lat_max + 90) / altura))
+    coluna_min = max(0, floor((lon_min + 180) / largura))
+    coluna_max = min(2**bits_lon - 1, floor((lon_max + 180) / largura))
 
     prefixos = set()
 
@@ -76,7 +74,7 @@ def buscar_prefixos_vizinhos(centro, raio_km, precision=PRECISAO_INDICE):
 
 def buscar_ids_candidatos(indice, prefixos):
     """Busca os IDs associados a qualquer um dos prefixos."""
-    
+
     return indice["trie"].search_prefixes(prefixos)
 
 
@@ -91,7 +89,7 @@ def distancia_km(lat1, lon1, lat2, lon2):
 
 def buscar_entregadores(frota, restaurante, raio_km, indice=None):
     """Filtra entregadores por distância e ordena pelo tempo de rota."""
-    
+
     raio_km = float(raio_km)
 
     if raio_km < 0:
@@ -106,9 +104,7 @@ def buscar_entregadores(frota, restaurante, raio_km, indice=None):
     else:
         # A Trie reduz a busca aos entregadores das células próximas
         precision = indice["precision"]
-        prefixos = buscar_prefixos_vizinhos(
-            (lat_rest, lon_rest), raio_km, precision
-        )
+        prefixos = buscar_prefixos_vizinhos((lat_rest, lon_rest), raio_km, precision)
         ids = buscar_ids_candidatos(indice, prefixos)
 
         candidatos = []
@@ -146,3 +142,4 @@ def buscar_entregadores(frota, restaurante, raio_km, indice=None):
     encontrados.sort(key=lambda item: item["eta_minutes"])
 
     return encontrados
+
